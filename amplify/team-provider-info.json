@@ -1,0 +1,15 @@
+{
+  "master": {
+    "awscloudformation": {
+      "AuthRoleName": "amplify-geolocation-master-161537-authRole",
+      "UnauthRoleArn": "arn:aws:iam::250036610033:role/amplify-geolocation-master-161537-unauthRole",
+      "AuthRoleArn": "arn:aws:iam::250036610033:role/amplify-geolocation-master-161537-authRole",
+      "Region": "us-east-1",
+      "DeploymentBucketName": "amplify-geolocation-master-161537-deployment",
+      "UnauthRoleName": "amplify-geolocation-master-161537-unauthRole",
+      "StackName": "amplify-geolocation-master-161537",
+      "StackId": "arn:aws:cloudformation:us-east-1:250036610033:stack/amplify-geolocation-master-161537/a4818ff0-601b-11eb-9c30-123cb1b397a4",
+      "AmplifyAppId": "d1z1ovbdqys060"
+    }
+  }
+}
