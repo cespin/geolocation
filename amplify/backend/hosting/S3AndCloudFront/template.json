@@ -121,7 +121,9 @@
             "Type": "AWS::CloudFront::Distribution",
             "DependsOn": [
                 "S3Bucket",
-                "OriginAccessIdentity"
+                "OriginAccessIdentity",
+                "DistributionOriginPolicy",
+                "LambdaVersion"
             ],
             "Properties": {
                 "DistributionConfig": {
@@ -153,13 +155,9 @@
                     "Enabled": "true",
                     "DefaultCacheBehavior": {
                         "AllowedMethods": [
-                            "DELETE",
                             "GET",
                             "HEAD",
-                            "OPTIONS",
-                            "PATCH",
-                            "POST",
-                            "PUT"
+                            "OPTIONS"
                         ],
                         "TargetOriginId": "hostingS3Bucket",
                         "ForwardedValues": {
@@ -171,6 +169,38 @@
                         "MinTTL": 60,
                         "Compress": true
                     },
+                    "CacheBehaviors" : [
+                        {
+                            "AllowedMethods": [
+                                "GET",
+                                "HEAD"
+                            ],
+                            "CachedMethods": [
+                                "GET",
+                                "HEAD"
+                            ],
+                            "Compress": true,
+                            "PathPattern" : "api/whereami/*",
+                            "CachePolicyId" : "658327ea-f89d-4fab-a63d-7e88639e58f6",
+                            "OriginRequestPolicyId": {
+                                "Fn::GetAtt": [
+                                    "DistributionOriginPolicy",
+                                    "Id"
+                                ]
+                            },
+                            "TargetOriginId": "hostingS3Bucket",
+                            "ViewerProtocolPolicy": "redirect-to-https",
+                            "LambdaFunctionAssociations" : [
+                                {
+                                    "EventType" : "origin-request",
+                                    "IncludeBody" : false,
+                                    "LambdaFunctionARN" : {
+                                        "Ref": "LambdaVersion"
+                                    }
+                                }
+                            ]
+                        }
+                    ],
                     "DefaultRootObject": "index.html",
                     "CustomErrorResponses": [
                         {
@@ -190,6 +220,163 @@
                             "ErrorCode": 404,
                             "ResponseCode": 200,
                             "ResponsePagePath": "/"
+                        }
+                    ]
+                }
+            }
+        },
+        "DistributionOriginPolicy": {
+            "Type" : "AWS::CloudFront::OriginRequestPolicy",
+            "Properties" : {
+                "OriginRequestPolicyConfig" : {
+                    "CookiesConfig" : {
+                        "CookieBehavior" : "none"
+                    },
+                    "HeadersConfig" : {
+                        "HeaderBehavior" : "whitelist",
+                        "Headers" : [ "CloudFront-Viewer-Country-Region", "CloudFront-Viewer-Country-Region-Name" ]
+                    },
+                    "Name" : {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "DistributionOriginPolicy-",
+                                {
+                                    "Ref": "env"
+                                }
+                            ]
+                        ]
+                    },
+                    "QueryStringsConfig" : {
+                        "QueryStringBehavior" : "none"
+                    }
+                }
+            }
+        },
+        "LambdaFunction": {
+            "Type": "AWS::Lambda::Function",
+            "DependsOn": ["LambdaExecutionRole"],
+            "Properties": {
+                "Code": {
+                    "ZipFile": {
+                        "Fn::Join": [
+                            "\n",
+                            [
+                                "exports.handler = async (event) => {",
+                                "const request = event.Records[0].cf.request;",
+                                "const body = {",
+                                "    'RegionCode': request.headers['cloudfront-viewer-country-region'][0].value,",
+                                "    'RegionName': request.headers['cloudfront-viewer-country-region-name'][0].value",
+                                "}",
+                                "const response = {",
+                                "    status: '200',",
+                                "    statusDescription: 'OK',",
+                                "    headers: {",
+                                "        'cache-control': [{",
+                                "            key: 'Cache-Control',",
+                                "            value: 'max-age=604800'",
+                                "        }],",
+                                "        'content-type': [{",
+                                "            key: 'Content-Type',",
+                                "            value: 'text/json'",
+                                "        }]",
+                                "    },",
+                                "    body: JSON.stringify(body),",
+                                "};",
+                                "return Promise.resolve(response);",
+                                "};"
+                            ]
+                        ]
+                    }
+                },
+                "Handler": "index.handler",
+                "Runtime": "nodejs12.x",
+                "Layers": [],
+                "Timeout": "10",
+                "Role": {
+                    "Fn::GetAtt": [
+                        "LambdaExecutionRole",
+                        "Arn"
+                    ]
+                }
+            }
+        },
+        "LambdaVersion": {
+            "Type": "AWS::Lambda::Version",
+            "DependsOn": ["LambdaFunction"],
+            "Properties": {
+                FunctionName: {
+                    "Ref": "LambdaFunction"
+                }
+            }
+        },
+        "LambdaExecutionRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "RoleName": {
+                    "Fn::Join": [
+                        "",
+                        [
+                            "LambdaEdgeWhereAmI",
+                            "-",
+                            {
+                                "Ref": "env"
+                            }
+                        ]
+                    ]
+                },
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    "lambda.amazonaws.com"
+                                ]
+                            },
+                            "Action": [
+                                "sts:AssumeRole"
+                            ]
+                        },
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    "edgelambda.amazonaws.com"
+                                ]
+                            },
+                            "Action": [
+                                "sts:AssumeRole"
+                            ]
+                        }
+                    ]
+                }
+            }
+        },
+        "lambdaexecutionpolicy": {
+            "DependsOn": [
+                "LambdaExecutionRole"
+            ],
+            "Type": "AWS::IAM::Policy",
+            "Properties": {
+                "PolicyName": "lambda-execution-policy",
+                "Roles": [
+                    {
+                        "Ref": "LambdaExecutionRole"
+                    }
+                ],
+                "PolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Action": [
+                                "logs:CreateLogGroup",
+                                "logs:CreateLogStream",
+                                "logs:PutLogEvents"
+                            ],
+                            "Resource": "arn:aws:logs:*:*:*"
                         }
                     ]
                 }
